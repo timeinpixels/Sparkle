@@ -1,5 +1,5 @@
 //
-//  SUWebViewCommon.m
+//  SUReleaseNotesCommon.m
 //  Sparkle
 //
 //  Created by Mayur Pawashe on 12/31/20.
@@ -8,20 +8,20 @@
 
 #if SPARKLE_BUILD_UI_BITS
 
-#import "SUWebViewCommon.h"
+#import "SUReleaseNotesCommon.h"
 
 
 #include "AppKitPrevention.h"
 
-BOOL SUWebViewIsSafeURL(NSURL *url, BOOL *isAboutBlankURL)
+BOOL SUReleaseNotesIsSafeURL(NSURL *url, NSArray<NSString *> *customAllowedURLSchemes, BOOL *isAboutBlankURL)
 {
     NSString *scheme = url.scheme;
     BOOL isAboutBlank = [url.absoluteString isEqualToString:@"about:blank"] || [url.absoluteString isEqualToString:@"about:srcdoc"];
-    BOOL whitelistedSafe = isAboutBlank || [@[@"http", @"https", @"macappstore", @"macappstores", @"itms-apps", @"itms-appss"] containsObject:scheme];
+    BOOL safeURL = isAboutBlank || [@[@"http", @"https", @"macappstore", @"macappstores", @"itms-apps", @"itms-appss"] containsObject:scheme] || [customAllowedURLSchemes containsObject:scheme.lowercaseString];
     
     *isAboutBlankURL = isAboutBlank;
     
-    return whitelistedSafe;
+    return safeURL;
 }
 
 #endif

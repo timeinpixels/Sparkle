@@ -52,12 +52,25 @@ func unarchiveUpdates(archivesSourceDir: URL, archivesDestDir: URL, disableNeste
 
     let fileManager = FileManager.default
 
-    var unarchived: [ArchiveItem] = []
-
+    // Create a dictionary of archive destination directories -> archive source path
+    // so we can ignore duplicate archive entries before trying to unarchive archives in parallel
+    var fileEntries: [URL: URL] = [:]
     let dir = try fileManager.contentsOfDirectory(atPath: archivesSourceDir.path)
-    var running = 0
-    for item in dir.filter({ !$0.hasPrefix(".") && !$0.hasSuffix(".delta") && !$0.hasSuffix(".xml") && !$0.hasSuffix(".html") }) {
+    for item in dir {
+        if item.hasPrefix(".") {
+            continue
+        }
+        
+        let itemURL = archivesSourceDir.appendingPathComponent(item)
+        let fileExtension = itemURL.pathExtension
+        // Note: keep this list in sync with SUPipedUnarchiver
+        guard ["zip", "tar", "gz", "tgz", "bz2", "tbz", "xz", "txz", "lzma", "dmg"].contains(fileExtension) else {
+            continue
+        }
+        
         let itemPath = archivesSourceDir.appendingPathComponent(item)
+        
+        // Ignore directories
         var isDir: ObjCBool = false
         if fileManager.fileExists(atPath: itemPath.path, isDirectory: &isDir) && isDir.boolValue {
             continue
@@ -69,7 +82,20 @@ func unarchiveUpdates(archivesSourceDir: URL, archivesDestDir: URL, disableNeste
         } else {
             archiveDestDir = archivesDestDir.appendingPathComponent(itemPath.lastPathComponent)
         }
-
+        
+        // Ignore duplicate archives
+        if let existingItemPath = fileEntries[archiveDestDir] {
+            throw makeError(code: .appcastError, "Duplicate update archives are not supported. Found '\(existingItemPath.lastPathComponent)' and '\(itemPath.lastPathComponent)'. Please remove one of them from the appcast generation directory.")
+        }
+        
+        fileEntries[archiveDestDir] = itemPath
+    }
+    
+    var unarchived: [String: ArchiveItem] = [:]
+    var updateParseError: Error? = nil
+    
+    var running = 0
+    for (archiveDestDir, itemPath) in fileEntries {
         let addItem = { (validateBundle: Bool) in
             do {
                 let item = try ArchiveItem(fromArchive: itemPath, unarchivedDir: archiveDestDir, validateBundle: validateBundle, disableNestedCodeCheck: disableNestedCodeCheck)
@@ -77,10 +103,15 @@ func unarchiveUpdates(archivesSourceDir: URL, archivesDestDir: URL, disableNeste
                     print("Found archive", item)
                 }
                 objc_sync_enter(unarchived)
-                unarchived.append(item)
+                // Make sure different archives don't contain the same update too
+                if let existingArchive = unarchived[item.version] {
+                    updateParseError = makeError(code: .appcastError, "Duplicate updates are not supported. Found archives '\(existingArchive.archivePath.lastPathComponent)' and '\(itemPath.lastPathComponent)' which contain the same bundle version. Please remove one of these archives from the appcast generation directory.")
+                } else {
+                    unarchived[item.version] = item
+                }
                 objc_sync_exit(unarchived)
             } catch {
-                print("Skipped", item, error)
+                print("Skipped", itemPath.lastPathComponent, error)
             }
         }
 
@@ -107,6 +138,10 @@ func unarchiveUpdates(archivesSourceDir: URL, archivesDestDir: URL, disableNeste
     }
 
     group.wait()
+    
+    if let updateParseError = updateParseError {
+        throw updateParseError
+    }
 
-    return unarchived
+    return Array(unarchived.values)
 }

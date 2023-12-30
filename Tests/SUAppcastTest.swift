@@ -7,7 +7,6 @@
 //
 
 import XCTest
-import Sparkle
 
 class SUAppcastTest: XCTestCase {
 
@@ -28,13 +27,15 @@ class SUAppcastTest: XCTestCase {
 
             XCTAssertEqual("Version 2.0", items[0].title)
             XCTAssertEqual("desc", items[0].itemDescription)
+            XCTAssertEqual("plain-text", items[0].itemDescriptionFormat)
             XCTAssertEqual("Sat, 26 Jul 2014 15:20:11 +0000", items[0].dateString)
             XCTAssertTrue(items[0].isCriticalUpdate)
             XCTAssertEqual(items[0].versionString, "2.0")
 
             // This is the best release matching our system version
             XCTAssertEqual("Version 3.0", items[1].title)
-            XCTAssertNil(items[1].itemDescription)
+            XCTAssertEqual("desc3", items[1].itemDescription)
+            XCTAssertEqual("html", items[1].itemDescriptionFormat)
             XCTAssertNil(items[1].dateString)
             XCTAssertTrue(items[1].isCriticalUpdate)
             XCTAssertEqual(items[1].phasedRolloutInterval, 86400)
@@ -868,15 +869,51 @@ class SUAppcastTest: XCTestCase {
                                                             ofType: "xml")!
         let testFileUrl = URL(fileURLWithPath: testFile)
         XCTAssertNotNil(testFileUrl)
+        
+        let preferredLanguage = Bundle.preferredLocalizations(from: ["en", "es"])[0]
+        
+        NSLog("Using preferred locale %@", preferredLanguage)
+        
+        let expectedReleaseNotesLink = (preferredLanguage == "es") ? "https://sparkle-project.org/notes.es.html" : "https://sparkle-project.org/notes.en.html"
 
         do {
             let testFileData = try Data(contentsOf: testFileUrl)
             
             let stateResolver = SPUAppcastItemStateResolver(hostVersion: "1.0", applicationVersionComparator: SUStandardVersionComparator.default, standardVersionComparator: SUStandardVersionComparator.default)
             
-            let appcast = try SUAppcast(xmlData: testFileData, relativeTo: testFileUrl, stateResolver: stateResolver)
-            let items = appcast.items
-            XCTAssertEqual("https://sparkle-project.org/#localized_notes_link_works", items[0].releaseNotesURL!.absoluteString)
+            let fullAppcast = try SUAppcast(xmlData: testFileData, relativeTo: testFileUrl, stateResolver: stateResolver)
+            
+            do {
+                let appcast = SUAppcastDriver.filterAppcast(fullAppcast, forMacOSAndAllowedChannels: ["english-later"])
+                let items = appcast.items
+                XCTAssertEqual(items.count, 1)
+                XCTAssertEqual(items[0].versionString, "6.0")
+                XCTAssertEqual(expectedReleaseNotesLink, items[0].releaseNotesURL!.absoluteString)
+            }
+            
+            do {
+                let appcast = SUAppcastDriver.filterAppcast(fullAppcast, forMacOSAndAllowedChannels: ["english-first"])
+                let items = appcast.items
+                XCTAssertEqual(items.count, 1)
+                XCTAssertEqual(items[0].versionString, "6.1")
+                XCTAssertEqual(expectedReleaseNotesLink, items[0].releaseNotesURL!.absoluteString)
+            }
+            
+            do {
+                let appcast = SUAppcastDriver.filterAppcast(fullAppcast, forMacOSAndAllowedChannels: ["english-first-implicit"])
+                let items = appcast.items
+                XCTAssertEqual(items.count, 1)
+                XCTAssertEqual(items[0].versionString, "6.2")
+                XCTAssertEqual(expectedReleaseNotesLink, items[0].releaseNotesURL!.absoluteString)
+            }
+            
+            do {
+                let appcast = SUAppcastDriver.filterAppcast(fullAppcast, forMacOSAndAllowedChannels: ["english-later-implicit"])
+                let items = appcast.items
+                XCTAssertEqual(items.count, 1)
+                XCTAssertEqual(items[0].versionString, "6.3")
+                XCTAssertEqual(expectedReleaseNotesLink, items[0].releaseNotesURL!.absoluteString)
+            }
         } catch let err as NSError {
             NSLog("%@", err)
             XCTFail(err.localizedDescription)
@@ -935,7 +972,7 @@ class SUAppcastTest: XCTestCase {
             XCTAssertEqual(nil, items[2].releaseNotesURL?.absoluteString)
             XCTAssertEqual(nil, items[2].fullReleaseNotesURL?.absoluteString)
             XCTAssertEqual(nil, items[2].infoURL?.absoluteString)
-            XCTAssertEqual(nil, items[2].fileURL?.absoluteString)
+            XCTAssertEqual("https://sparkle-project.org/release-1.0.zip", items[2].fileURL?.absoluteString)
             
         } catch let err as NSError {
             NSLog("%@", err)
@@ -973,4 +1010,21 @@ class SUAppcastTest: XCTestCase {
         }
     }
 
+    func testDangerousLink() {
+        let testFile = Bundle(for: SUAppcastTest.self).path(forResource: "test-dangerous-link", ofType: "xml")!
+        let testData = NSData(contentsOfFile: testFile)!
+        
+        do {
+            let baseURL: URL? = nil
+            
+            let stateResolver = SPUAppcastItemStateResolver(hostVersion: "1.0", applicationVersionComparator: SUStandardVersionComparator.default, standardVersionComparator: SUStandardVersionComparator.default)
+            
+            let _ = try SUAppcast(xmlData: testData as Data, relativeTo: baseURL, stateResolver: stateResolver)
+            
+            XCTFail("Appcast creation should fail when encountering dangerous link")
+        } catch let err as NSError {
+            NSLog("Expected error: %@", err)
+            XCTAssertNotNil(err)
+        }
+    }
 }

@@ -16,6 +16,7 @@
 #import "SUVersionComparisonProtocol.h"
 #import "SUStandardVersionComparator.h"
 #import "SUUpdateValidator.h"
+#import "SPUVerifierInformation.h"
 #import "SUHost.h"
 #import "SPUSkippedUpdate.h"
 #import "SUSignatures.h"
@@ -28,8 +29,6 @@ NS_ASSUME_NONNULL_BEGIN
 static const char *SUAppleQuarantineIdentifier = "com.apple.quarantine";
 
 @interface SUFileManager (Private)
-
-- (BOOL)_acquireAuthorizationWithError:(NSError *_Nullable __autoreleasing *_Nullable)error;
 
 - (BOOL)_itemExistsAtURL:(NSURL *)fileURL;
 - (BOOL)_itemExistsAtURL:(NSURL *)fileURL isDirectory:(nullable BOOL *)isDirectory;
